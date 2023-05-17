@@ -300,7 +300,7 @@ class SoftObject:
         self.velocity = velocities
 
     def draw(self, vis):
-        # Draw the mesh in the Open3D visualizer.
+        # Draw the mesh
         vis.add_geometry(self.mesh)
 
     def calculate_volume(self):
@@ -326,7 +326,7 @@ class RigidObject:
 
     @property
     def radius(self):
-        # For a sphere, the radius is constant
+        # Radius is constant
         return self.mesh.get_max_bound()[0] - self.mesh.get_center()[0]
 
     def update_position(self, dt):
@@ -351,7 +351,7 @@ class RigidObject:
 
 
     def draw(self, vis):
-        # Draw the mesh in the Open3D visualizer.
+        # Draw the mesh 
         vis.add_geometry(self.mesh)
 
 
