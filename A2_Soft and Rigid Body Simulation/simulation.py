@@ -2,6 +2,39 @@ import open3d as o3d
 import numpy as np 
 import json 
 
+class SpatialHash:
+    def __init__(self, cell_size):
+        self.cell_size = cell_size
+        self.hash_map = {}
+
+    def hash(self, position):
+        # Divide the position by the cell size and round down to the nearest integer to get the cell coordinates.
+        return tuple((position // self.cell_size).astype(int))
+
+    def insert(self, obj):
+        # Insert the object into the cell corresponding to its position.
+        h = self.hash(obj.position)
+        if h not in self.hash_map:
+            self.hash_map[h] = []
+        self.hash_map[h].append(obj)
+
+    def remove(self, obj):
+        # Remove the object from the cell corresponding to its old position.
+        h = self.hash(obj.position)
+        self.hash_map[h].remove(obj)
+
+    def query(self, obj):
+        # Return all objects in the same cell and the neighboring cells.
+        h = self.hash(obj.position)
+        neighbors = []
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                for dz in [-1, 0, 1]:
+                    cell = (h[0]+dx, h[1]+dy, h[2]+dz)
+                    if cell in self.hash_map:
+                        neighbors.extend(self.hash_map[cell])
+        return neighbors
+
 class Simulator:
     def __init__(self):
         # A list to store all the soft and rigid objects in the simulation.
@@ -33,6 +66,32 @@ class Simulator:
 
         self.initialize_objects()
 
+        self.selected_object = None
+        self.vis.register_key_callback(ord("M"), self.toggle_select_object)
+
+    def toggle_select_object(self, vis):
+        # Cycle through objects each time 'M' is pressed.
+        if self.selected_object is None:
+            self.selected_object = 0
+        else:
+            self.selected_object += 1
+            if self.selected_object >= len(self.objects):
+                self.selected_object = None
+        print(f"Selected object: {self.selected_object}")
+
+    def select_object(self, x, y):
+        # Convert the mouse pointer coordinates to a ray in world coordinates.
+        ray = self.view.convert_to_pinhole_camera_parameters().unproject(x, y, 1)
+
+        # Calculate the closest point on each object to the ray.
+        distances = []
+        for obj in self.objects:
+            distances.append(obj.mesh.distance_to(ray))
+
+        # Select the object with the closest point.
+        self.selected_object = self.objects[np.argmin(distances)]
+        self.attachment_point = self.selected_object.mesh.closest_point(ray)
+
     def add_soft_object(self, filename, position=np.array([0.0, 0.0, 0.0])):
         obj = SoftObject(filename, position)
         obj.draw(self.vis)
@@ -63,13 +122,47 @@ class Simulator:
 
     def run(self):
         while self.running:
-            for obj in self.objects:
+            for i, obj in enumerate(self.objects):
                 for _ in range(self.num_substeps):
                     obj.update_position(self.timestep_size / self.num_substeps)
-                    obj.handle_collision(self.boundary)
-                self.vis.update_geometry(obj.mesh)  # pass geometry to be updated
+                    if isinstance(obj, SoftObject):
+                        obj.handle_collision(self.boundary)
+                    elif isinstance(obj, RigidObject):
+                        obj.handle_collision(self.boundary, obj.position, obj.velocity)
+                self.handle_object_collisions()
+
+                if i == self.selected_object:
+                    # Project the mouse position from 2D screen space to 3D world space.
+                    # You might need to adjust this depending on your camera setup.
+                    x, y = self.view.convert_to_pinhole_camera_parameters().unproject(*self.vis.get_mouse_position(), 1)
+                    obj.position = np.array([x, y, obj.position[2]])  # Assuming z position remains constant.
+
+                self.vis.update_geometry(obj.mesh)
             self.vis.poll_events()
             self.vis.update_renderer()
+
+    def handle_object_collisions(self):
+        for i in range(len(self.objects)):
+            for j in range(i+1, len(self.objects)):
+                if isinstance(self.objects[i], RigidObject) and isinstance(self.objects[j], RigidObject):
+                    # Calculate the vector between the objects' positions.
+                    delta = self.objects[i].position - self.objects[j].position
+
+                    # Calculate the distance between the objects.
+                    dist = np.linalg.norm(delta)
+
+                    # Check if the distance is less than the sum of the radii.
+                    if dist < (self.objects[i].radius + self.objects[j].radius):
+                        # Calculate the unit vector of the direction of collision.
+                        collision_direction = delta / dist
+
+                        # Swap the velocities of the two objects along the direction of collision.
+                        # This simulates a perfectly elastic collision.
+                        self.objects[i].velocity, self.objects[j].velocity = (
+                            self.objects[j].velocity - 2 * (self.objects[j].velocity.dot(collision_direction)) * collision_direction,
+                            self.objects[i].velocity - 2 * (self.objects[i].velocity.dot(collision_direction)) * collision_direction
+                        )
+
 
     def draw_boundary(self):
         # Define the 8 corners of the cube.
@@ -164,6 +257,12 @@ class SoftObject:
         # Set the initial position of the object.
         self.mesh.translate(position, relative=False)
 
+    @property
+    def radius(self):
+        # Calculate the radius as the maximum distance from the center to the vertices
+        center = np.mean(np.asarray(self.mesh.vertices), axis=0)
+        return np.max(np.linalg.norm(np.asarray(self.mesh.vertices) - center, axis=1))
+
     def update_position(self, dt):
         # Apply the velocity to update the position of the vertices.
         self.mesh.vertices = o3d.utility.Vector3dVector(np.asarray(self.mesh.vertices) + self.velocity * dt)
@@ -222,25 +321,34 @@ class RigidObject:
         self.velocity = np.array([0.0, 0.0, 0.0])
         self.position = np.array([5.0, 5.0, 5.0])
 
+        # Update the position of the mesh.
+        self.mesh.translate(self.position, relative=False)
+
+    @property
+    def radius(self):
+        # For a sphere, the radius is constant
+        return self.mesh.get_max_bound()[0] - self.mesh.get_center()[0]
+
     def update_position(self, dt):
         # Apply the velocity to update the position.
         self.position += self.velocity * dt
 
         # Apply gravity to update the velocity.
-        self.velocity += np.array([0, -9.8, 0]) * dt
+        self.velocity += np.array([4, -9.8, 0]) * dt
 
         # Update the position of the mesh.
-        self.mesh.translate(self.position, relative=False)
+        self.mesh.translate(self.velocity * dt, relative=True)
 
-    def handle_collision(self, boundary):
-        # If the object is out of the boundary, move it back and reverse the velocity.
+
+    def handle_collision(self, boundary, position, velocity):
         for i in range(3):
-            if self.position[i] < 0:
-                self.position[i] = 0
-                self.velocity[i] *= -1
-            elif self.position[i] > boundary[i]:
-                self.position[i] = boundary[i]
-                self.velocity[i] *= -1
+            if position[i] < 0:
+                position[i] = 0
+                velocity[i] *= -1
+            elif position[i] > boundary[i]:
+                position[i] = boundary[i]
+                velocity[i] *= -1
+
 
     def draw(self, vis):
         # Draw the mesh in the Open3D visualizer.
