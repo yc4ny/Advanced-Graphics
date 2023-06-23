@@ -34,8 +34,8 @@ if __name__ == "__main__":
     # For Training 
     if not args.render:
         # Exploration noise
-        policy_kwargs = dict(log_std_init = 0.0)
-        model = PPO("MlpPolicy", env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log="./logs/")
+        policy_kwargs = dict(log_std_init = -1.0)
+        model = PPO("MlpPolicy", env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log="./logs/", gamma = 1.00)
         model.learn(total_timesteps=500000)
         model.save(args.model_path)
         

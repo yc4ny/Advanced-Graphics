@@ -205,19 +205,38 @@ class CustomHalfCheetahEnv(MujocoEnv, utils.EzPickle):
         self.num_step += 1
 
         x_position_after = self.data.qpos[0]
+        z_position_after = self.data.qpos[1]
         x_velocity = (x_position_after - x_position_before) / self.dt
 
         ctrl_cost = self.control_cost(action)
-        
         forward_reward = self._forward_reward_weight * x_velocity
 
         observation = self._get_obs()
 
-        ## TODO : Make your custom reward function
+        ## Custom reward function
         ## =================================
-        reward = forward_reward - ctrl_cost
+        # Reward the agent for keeping its torso upright
+        # and penalize it for rotational angles
+        rooty_angle = self.data.qpos[2]
+        angle_penalty = -abs(rooty_angle)
 
+        # Obstacle avoidance penalty and jumping reward
+        obstacle_positions = [2.0, 10.0, 13.0]  # x positions of obstacles
+        obstacle_penalty = 0.0
+        jumping_reward = 0.0
 
+        for obs_x in obstacle_positions:
+            distance_to_obstacle = abs(x_position_after - obs_x)
+            # Check if the cheetah is near the obstacle
+            if distance_to_obstacle < 1.0:
+                # Penalize if too close to an obstacle
+                obstacle_penalty -= 1.0 / distance_to_obstacle
+                
+                # Reward for being above a certain height when near the obstacle
+                if z_position_after > 0.5:
+                    jumping_reward += 1.0
+
+        reward = forward_reward - ctrl_cost + angle_penalty - obstacle_penalty + jumping_reward
         ## =================================
 
 

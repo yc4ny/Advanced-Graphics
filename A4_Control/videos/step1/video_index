@@ -1,0 +1,11 @@
+Video name index:
+
+gamma_010.mp4 -> Gamma = 0.10 
+gamma_099.mp4 -> Gamma = 0.99
+gamma_100.mp4 -> Gamma = 1.00
+exp_000.mp4 -> Exploration noise = 1.00
+exp_minus050.mp4 -> Exploration noise = 0.6065
+exp_minus100.mp4 -> Exploration noise = 0.3679
+exp_minus500.mp4 -> Exploration noise = 0.0067
+
+
