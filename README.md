@@ -2,7 +2,7 @@
 
 ## Boids Model 3D Simulation
 
-![Banner Image](/images/banner.png)
+![Banner Image](images/boids_main.png)
 
 In this project, the Boids algorithm is implemented to simulate the flocking behavior of birds in a 3D environment. The Boids model was originally proposed by Craig Reynolds and aims to mimic natural flocks such as groups of birds or schools of fish.
 
