@@ -1,6 +1,6 @@
 # Graphics and Simulation Toolkit
 
-# Boids Model 3D Simulation
+## Boids Model 3D Simulation
 
 ![Banner Image](/images/banner.png)
 
